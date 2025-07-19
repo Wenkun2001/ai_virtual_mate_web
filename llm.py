@@ -1,283 +1,224 @@
-# 大语言模型模块
+import json
+from datetime import datetime
 from vlm import *
 
-try:
-    from letta import create_client, LLMConfig, EmbeddingConfig
-    from letta.schemas.memory import ChatMemory
-except:
-    pass
 with open('data/db/memory.db', 'r', encoding='utf-8') as memory_file:
     try:
         openai_history = json.load(memory_file)
     except:
         openai_history = []
-spark_history = []
-sf_url = "https://api.siliconflow.cn/v1"
 
 
-def chat_preprocess(msg):  # 预处理
+def current_time():  # 当前时间
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
+def chat_llm(msg):  # 与大语言模型对话
+    if prefer_llm == "ZhipuAI":
+        glm_client = OpenAI(base_url=glm_url, api_key=glm_key)
+        openai_history.append({"role": "user", "content": msg})
+        messages = [{"role": "system", "content": prompt}]
+        messages.extend(openai_history)
+        completion = glm_client.chat.completions.create(model=glm_llm_model, messages=messages)
+        openai_history.append({"role": "assistant", "content": completion.choices[0].message.content})
+        return completion.choices[0].message.content
+    elif prefer_llm == "OpenAI":
+        custom_client = OpenAI(base_url=openai_url, api_key=openai_key)
+        openai_history.append({"role": "user", "content": msg})
+        messages = [{"role": "system", "content": prompt}]
+        messages.extend(openai_history)
+        completion = custom_client.chat.completions.create(model=openai_llm_model, messages=messages)
+        openai_history.append({"role": "assistant", "content": completion.choices[0].message.content})
+        return completion.choices[0].message.content
+    elif prefer_llm == "Ollama":
+        try:
+            rq.get(ollama_url)
+        except:
+            os.system(f"ollama pull {ollama_llm_model}")
+        ollama_client = Client(host=ollama_url)
+        openai_history.append({"role": "user", "content": msg})
+        messages = [{"role": "system", "content": prompt}]
+        messages.extend(openai_history)
+        response = ollama_client.chat(model=ollama_llm_model, messages=messages)
+        openai_history.append({"role": "assistant", "content": response['message']['content']})
+        return response['message']['content']
+    elif prefer_llm == "LM Studio":
+        lmstudio_client = OpenAI(base_url=f"{lmstudio_url}/v1", api_key="lm-studio")
+        openai_history.append({"role": "user", "content": msg})
+        messages = [{"role": "system", "content": prompt}]
+        messages.extend(openai_history)
+        completion = lmstudio_client.chat.completions.create(model="", messages=messages)
+        openai_history.append({"role": "assistant", "content": completion.choices[0].message.content})
+        return completion.choices[0].message.content
+    elif prefer_llm == "AnythingLLM":
+        res = chat_anything_llm(msg)
+        return res
+    elif prefer_llm == "Dify":
+        res = chat_dify(msg)
+        return res
+    elif prefer_llm == "RKLLM":
+        res = chat_rkllm(msg)
+        return res
+    else:
+        return "对话语言模型选择错误，请检查配置"
+
+
+def chat_preprocess(msg):  # 对话预处理
+    pg.quit()
     try:
-        content = "图像识别已关闭"
-        if ("屏幕" in msg or "画面" in msg or "图像" in msg or "看到" in msg or "看见" in msg or "照片" in msg or "摄像头" in msg or "图片" in msg) and img_menu.get() != "关闭图像识别":
-            if "图片" in msg:
-                if os.path.exists("data/cache/cache.png"):
-                    if img_menu.get() == "GLM-4V-Flash":
-                        content = glm_4v_photo(msg)
-                    elif img_menu.get() == "本地Ollama VLM":
-                        content = ollama_vlm_photo(msg)
-                    elif img_menu.get() == "本地QwenVL整合包":
-                        content = qwen_vlm_photo(msg)
-                    elif img_menu.get() == "本地GLM-V整合包":
-                        content = glm_v_photo(msg)
-                    elif img_menu.get() == "本地Janus整合包":
-                        content = janus_photo(msg)
-                    elif img_menu.get() == "自定义API-VLM":
-                        content = custom_vlm_photo(msg)
-                    notice(f"{mate_name}识别了上传的图片")
-                    os.remove("data/cache/cache.png")
-                else:
-                    content = "请先点击右下方按钮上传图片"
-                    notice("请先点击右下方按钮上传图片")
-            elif "屏幕" in msg or "画面" in msg or "图像" in msg:
-                if img_menu.get() == "GLM-4V-Flash":
-                    content = glm_4v_screen(msg)
-                elif img_menu.get() == "本地Ollama VLM":
-                    content = ollama_vlm_screen(msg)
-                elif img_menu.get() == "本地QwenVL整合包":
-                    content = qwen_vlm_screen(msg)
-                elif img_menu.get() == "本地GLM-V整合包":
-                    content = glm_v_screen(msg)
-                elif img_menu.get() == "本地Janus整合包":
-                    content = janus_screen(msg)
-                elif img_menu.get() == "自定义API-VLM":
-                    content = custom_vlm_screen(msg)
-                notice(f"{mate_name}捕获了屏幕，调用[电脑屏幕识别]")
-            elif "看到" in msg or "看见" in msg or "照片" in msg or "摄像头" in msg:
-                if img_menu.get() == "GLM-4V-Flash":
-                    content = glm_4v_cam(msg)
-                elif img_menu.get() == "本地Ollama VLM":
-                    content = ollama_vlm_cam(msg)
-                elif img_menu.get() == "本地QwenVL整合包":
-                    content = qwen_vlm_cam(msg)
-                elif img_menu.get() == "本地GLM-V整合包":
-                    content = glm_v_cam(msg)
-                elif img_menu.get() == "本地Janus整合包":
-                    content = janus_cam(msg)
-                elif img_menu.get() == "自定义API-VLM":
-                    content = custom_vlm_cam(msg)
-                notice(f"{mate_name}拍了照片，调用[摄像头识别]")
+        if "几点" in msg or "多少点" in msg or "时间" in msg or "时候" in msg:
+            msg = f"[当前时间:{current_time()}]{msg}"
+        if "哈喽" in msg:
+            res = f"{username}，我是{mate_name}，很高兴遇见你"
+            """
+        elif "寻找手机" in msg:
+            find_phone()
+            return
+        elif "寻找蓝牙耳机" in msg:
+            find_earphone()
+            return
+            """
+        elif "唱一" in msg or "唱首" in msg or "唱歌" in msg or "放歌" in msg or "放一" in msg or "放首" in msg or "你唱" in msg or "跳舞" in msg:
+            play_music_or_dance(msg)
+            return
+        elif ("画面" in msg or "图像" in msg or "看到" in msg or "看见" in msg or "照片" in msg or "摄像头" in msg or "图片" in msg) and prefer_vlm != "OFF":
+            msg = f"{prompt}。你需要根据画面内容和我聊天。我的问题是：{msg}"
+            if prefer_vlm == "ZhipuAI":
+                res = glm_4v_cam(msg)
+            elif prefer_vlm == "OpenAI":
+                res = openai_vlm_cam(msg)
+            elif prefer_vlm == "Ollama":
+                res = ollama_vlm_cam(msg)
+            elif prefer_vlm == "QwenVL":
+                res = qwen_vlm_cam(msg)
+            elif prefer_vlm == "GLM-V":
+                res = glm_v_cam(msg)
+            elif prefer_vlm == "Janus":
+                res = janus_cam(msg)
+            elif prefer_vlm == "YOLO-OCR":
+                res = yolo_ocr_cam(msg)
+            else:
+                res = "图像识别引擎选择错误，请检查配置"
+        elif "天气" in msg:
+            res = get_weather()
+        elif "新闻" in msg:
+            res = get_news(msg)
+        elif "联网" in msg or "连网" in msg or "搜索" in msg or "查询" in msg or "查找" in msg:
+            res = ol_search(msg)
+        elif "信号" in msg or "强度" in msg:
+            res = get_wifi_info()
+        elif "网址" in msg or "地址" in msg or "端口" in msg:
+            res = get_lan_url()
+        elif "网络" in msg:
+            res = get_net_info()
+        elif "状态" in msg or "温度" in msg:
+            res = get_state()
+        elif "灯" in msg and "开" in msg:
+            res = control_ha()
+        elif "灯" in msg and "关" in msg:
+            res = control_ha()
+        elif "录入人脸" in msg:
+            res = input_face(msg)
+        elif "删除人脸" in msg:
+            res = delete_face()
+        elif "我是谁" in msg:
+            res = recog_face()
+        elif "切换" in msg and "语音" in msg:
+            res = switch_asr_mode()
+        elif "切换" in msg and "主动" in msg:
+            res = switch_ase_mode()
+        elif "设置" in msg or "配置" in msg or "模式" in msg:
+            with open("data/db/current_asr.txt", "r", encoding="utf-8") as f:
+                current_asr = f.read()
+            with open("data/db/current_ase.txt", "r", encoding="utf-8") as f:
+                current_ase = f.read()
+            res = f"语音识别模式为{current_asr}，对话语言模型为{prefer_llm}，语音合成引擎为{prefer_tts}，图像识别引擎为{prefer_vlm}，主动感知对话为{current_ase}"
+        elif ("向左" in msg or "往左" in msg or "左转" in msg) and embody_ai_switch == "ON":
+            turn_left(rotate_gear)
+            return
+        elif ("向右" in msg or "往右" in msg or "右转" in msg) and embody_ai_switch == "ON":
+            turn_right(rotate_gear)
+            return
+        elif ("向前" in msg or "往前" in msg or "前进" in msg) and embody_ai_switch == "ON":
+            up_robot(move_gear)
+            return
+        elif ("向后" in msg or "往前" in msg or "后退" in msg) and embody_ai_switch == "ON":
+            down_robot(move_gear)
+            return
+        elif ("停止" in msg or "停下" in msg or "别动" in msg or "不要动" in msg) and embody_ai_switch == "ON":
+            res = "我已停下"
+            emergency_stop()
+        elif ("避障" in msg or "躲避障碍" in msg) and embody_ai_switch == "ON":
+            res = "我开始自动避障啦"
+            Thread(target=auto_avoid).start()
+        elif ("自由活动" in msg or "自主行动" in msg) and embody_ai_switch == "ON":
+            res = "我开始自由活动啦"
+            Thread(target=free_activity).start()
+        elif ("找寻" in msg or "寻找" in msg or "监测" in msg or "检测" in msg) and embody_ai_switch == "ON":
+            keyword_actions = {"书": "书本", "手机": "手机", "杯": "杯子", "剪刀": "剪刀", "苹果": "苹果",
+                               "蕉": "香蕉", "橙": "橙子"}
+            res = "这个我不会寻找哦"
+            for keyword, obj in keyword_actions.items():
+                if keyword in msg:
+                    Thread(target=auto_find_yolo, args=(obj,)).start()
+                    res = f"我开始自动寻找{obj}啦"
+                    break
+        elif ("跟着" in msg or "跟随" in msg or "紧跟" in msg) and embody_ai_switch == "ON":
+            res = "我会一直跟随你啦"
+            Thread(target=auto_follow).start()
+        elif ("打开手势" in msg or "开启手势" in msg) and embody_ai_switch == "ON":
+            Thread(target=run_gesture).start()
+            res = "手势操控打开啦"
+        elif ("关闭手势" in msg or "退出手势" in msg) and embody_ai_switch == "ON":
+            close_gesture()
+            res = "手势操控已关闭"
+        elif "确认删除记忆" in msg or "确定删除记忆" in msg:
+            res = clear_chat()
+        elif "确定退出" in msg or "确认退出" in msg:
+            exit_app()
+            return
+        elif "确认重新启动" in msg or "确定重新启动" in msg:
+            reboot()
+            return
+        elif "确认关机" in msg or "确定关机" in msg:
+            shutdown()
+            return
         else:
-            content = chat_llm(prompt, msg)
-            notice(f"收到{mate_name}回复")
-        with open('data/db/memory.db', 'w', encoding='utf-8') as memory_file:
-            json.dump(openai_history, memory_file, ensure_ascii=False, indent=4)
-        return content
+            res = chat_llm(msg)
+        with open('data/db/memory.db', 'w', encoding='utf-8') as f:
+            json.dump(openai_history, f, ensure_ascii=False, indent=4)
     except Exception as e:
-        notice(f"发生错误，错误详情：{e}")
-        return f"发生错误，错误详情：{e}"
+        res = f"服务异常：{e}"
+    res = res.replace("#", "").replace("*", "")
+    print(f"{mate_name}：{res}")
+    play_tts(res)
 
 
-def chat_llm(tishici, msg):  # 大语言模型聊天
-    try:
-        if llm_menu.get() == "讯飞星火Lite":
-            spark_client = OpenAI(base_url="https://spark-api-open.xf-yun.com/v1", api_key=spark_key)
-            spark_history.append({"role": "user", "content": f"{tishici}。我的问题是：{msg}"})
-            messages = []
-            messages.extend(spark_history)
-            completion = spark_client.chat.completions.create(model="general", messages=messages)
-            spark_history.append({"role": "assistant", "content": completion.choices[0].message.content})
-            return completion.choices[0].message.content
-        elif llm_menu.get() == "GLM-4-Flash":
-            glm_client = OpenAI(base_url=glm_url, api_key=glm_key)
-            openai_history.append({"role": "user", "content": msg})
-            messages = [{"role": "system", "content": tishici}]
-            messages.extend(openai_history)
-            completion = glm_client.chat.completions.create(model="glm-4-flash-250414", messages=messages)
-            openai_history.append({"role": "assistant", "content": completion.choices[0].message.content})
-            return completion.choices[0].message.content
-        elif llm_menu.get() == "GLM-Z1-Flash":
-            glm_client = OpenAI(base_url=glm_url, api_key=glm_key)
-            openai_history.append({"role": "user", "content": msg})
-            messages = [{"role": "system", "content": tishici}]
-            messages.extend(openai_history)
-            completion = glm_client.chat.completions.create(model="glm-z1-flash", messages=messages)
-            openai_history.append({"role": "assistant", "content": completion.choices[0].message.content})
-            return completion.choices[0].message.content
-        elif llm_menu.get() == "DeepSeek-R1-7B":
-            ds_client = OpenAI(base_url=sf_url, api_key=sf_key)
-            openai_history.append({"role": "user", "content": msg})
-            messages = [{"role": "system", "content": tishici}]
-            messages.extend(openai_history)
-            completion = ds_client.chat.completions.create(model="deepseek-ai/DeepSeek-R1-Distill-Qwen-7B",
-                                                           messages=messages)
-            openai_history.append({"role": "assistant", "content": completion.choices[0].message.content})
-            return completion.choices[0].message.content
-        elif llm_menu.get() == "通义千问2.5-7B":
-            qwen_client = OpenAI(base_url=sf_url, api_key=sf_key)
-            openai_history.append({"role": "user", "content": msg})
-            messages = [{"role": "system", "content": tishici}]
-            messages.extend(openai_history)
-            completion = qwen_client.chat.completions.create(model="Qwen/Qwen2.5-7B-Instruct",
-                                                             messages=messages)
-            openai_history.append({"role": "assistant", "content": completion.choices[0].message.content})
-            return completion.choices[0].message.content
-        elif llm_menu.get() == "InternLM2.5-7B":
-            internlm_client = OpenAI(base_url=sf_url, api_key=sf_key)
-            openai_history.append({"role": "user", "content": msg})
-            messages = [{"role": "system", "content": tishici}]
-            messages.extend(openai_history)
-            completion = internlm_client.chat.completions.create(model="internlm/internlm2_5-7b-chat",
-                                                                 messages=messages)
-            openai_history.append({"role": "assistant", "content": completion.choices[0].message.content})
-            return completion.choices[0].message.content
-        elif llm_menu.get() == "腾讯混元Lite":
-            hunyuan_client = OpenAI(base_url="https://api.hunyuan.cloud.tencent.com/v1", api_key=hy_key)
-            openai_history.append({"role": "user", "content": msg})
-            messages = [{"role": "system", "content": tishici}]
-            messages.extend(openai_history)
-            completion = hunyuan_client.chat.completions.create(model="hunyuan-lite", messages=messages)
-            openai_history.append({"role": "assistant", "content": completion.choices[0].message.content})
-            return completion.choices[0].message.content
-        elif llm_menu.get() == "本地Qwen整合包":
-            api = f"http://{local_server_ip}:8088/llm/?p={tishici}&q={msg}"
-            try:
-                res = rq.get(api).json()["answer"]
-                return res
-            except Exception as e:
-                return f"本地Qwen整合包API服务器未开启，错误详情：{str(e)[0:100]}"
-        elif llm_menu.get() == "本地LM Studio":
-            try:
-                lmstudio_client = OpenAI(base_url=f"http://{local_server_ip}:{lmstudio_port}/v1", api_key="lm-studio")
-                openai_history.append({"role": "user", "content": msg})
-                messages = [{"role": "system", "content": tishici}]
-                messages.extend(openai_history)
-                completion = lmstudio_client.chat.completions.create(model="", messages=messages)
-                openai_history.append({"role": "assistant", "content": completion.choices[0].message.content})
-                return completion.choices[0].message.content
-            except Exception as e:
-                return f"本地LM Studio软件API服务未开启，错误详情：{e}"
-        elif llm_menu.get() == "本地Ollama LLM":
-            try:
-                try:
-                    rq.get(f'http://{local_server_ip}:{ollama_port}')
-                except:
-                    Popen(f"ollama pull {ollama_model_name}", shell=False)
-                ollama_client = Client(host=f'http://{local_server_ip}:{ollama_port}')
-                openai_history.append({"role": "user", "content": msg})
-                messages = [{"role": "system", "content": tishici}]
-                messages.extend(openai_history)
-                response = ollama_client.chat(model=ollama_model_name, messages=messages)
-                openai_history.append({"role": "assistant", "content": response['message']['content']})
-                return response['message']['content']
-            except Exception as e:
-                return f"本地Ollama LLM配置错误，错误详情：{e}"
-        elif llm_menu.get() == "本地RWKV运行器":
-            try:
-                rwkv_client = OpenAI(base_url=f"http://{local_server_ip}:8000/v1", api_key="rwkv")
-                openai_history.append({"role": "user", "content": msg})
-                messages = [{"role": "system", "content": tishici}]
-                messages.extend(openai_history)
-                completion = rwkv_client.chat.completions.create(model="rwkv", messages=messages)
-                openai_history.append({"role": "assistant", "content": completion.choices[0].message.content})
-                return completion.choices[0].message.content
-            except Exception as e:
-                return f"本地RWKV Runner软件API服务未开启，错误详情：{e}"
-        elif llm_menu.get() == "本地OpenVINO":
-            api = f"http://{local_server_ip}:8087/openvino/?p={tishici}&q={msg}"
-            try:
-                res = rq.get(api).json()["answer"]
-                return res
-            except Exception as e:
-                return f"本地OpenVINO整合包API服务器未开启，错误详情：{str(e)[0:100]}"
-        elif llm_menu.get() == "Dify聊天助手":
-            try:
-                res = chat_dify(msg)
-                return res
-            except Exception as e:
-                return f"本地Dify聊天助手配置错误，错误详情：{e}"
-        elif llm_menu.get() == "AnythingLLM":
-            try:
-                res = chat_anything_llm(msg)
-                return res
-            except Exception as e:
-                return f"本地AnythingLLM知识库配置错误，错误详情：{e}"
-        elif llm_menu.get() == "Letta长期记忆":
-            res = chat_letta(msg)
-            return res
-        else:
-            try:
-                custom_client = OpenAI(base_url=custom_url, api_key=custom_key)
-                openai_history.append({"role": "user", "content": msg})
-                messages = [{"role": "system", "content": tishici}]
-                messages.extend(openai_history)
-                completion = custom_client.chat.completions.create(model=custom_model, messages=messages)
-                openai_history.append({"role": "assistant", "content": completion.choices[0].message.content})
-                return completion.choices[0].message.content
-            except Exception as e:
-                return f"自定义API配置错误，错误详情：{e}"
-    except Exception as e:
-        notice(f"{llm_menu.get()}不可用，请前往软件设置正确配置云端AI Key，错误详情：{e}")
-        return f"{llm_menu.get()}不可用，请前往软件设置正确配置云端AI Key，错误详情：{e}"
-
-
-def chat_dify(msg):  # Dify聊天助手
+def chat_dify(msg):  # Dify知识库
     headers = {"Authorization": f"Bearer {dify_key}", "Content-Type": "application/json"}
     data = {"query": msg, "inputs": {}, "response_mode": "blocking", "user": username, "conversation_id": None}
-    res = rq.post(f"http://{dify_ip}/v1/chat-messages", headers=headers, data=json.dumps(data))
+    res = rq.post(f"{dify_ip}/v1/chat-messages", headers=headers, data=json.dumps(data))
     res = res.json()['answer'].strip()
     return res
 
 
 def chat_anything_llm(msg):  # AnythingLLM知识库
-    url = f"http://{local_server_ip}:3001/api/v1/workspace/{anything_llm_ws}/chat"
+    url = f"{anything_llm_ip}/api/v1/workspace/{anything_llm_ws}/chat"
     headers = {"Authorization": f"Bearer {anything_llm_key}", "Content-Type": "application/json"}
     data = {"message": msg}
     res = rq.post(url, json=data, headers=headers)
     return res.json().get("textResponse")
 
 
-def chat_letta(msg):  # Letta长期记忆
-    answer = "Letta长期记忆服务拥挤，请一段时间后再试"
-    try:
-        client = create_client()
-        with open('data/db/letta.db', 'r', encoding='utf-8') as f:
-            agent_state_id = f.read()
-        if len(agent_state_id) < 10:
-            agent_state = client.create_agent(
-                memory=ChatMemory(persona=prompt, human=f"Name: {username}"),
-                llm_config=LLMConfig.default_config(model_name="letta"),
-                embedding_config=EmbeddingConfig.default_config(model_name="text-embedding-ada-002"))
-            with open('data/db/letta.db', 'w', encoding='utf-8') as f:
-                f.write(agent_state.id)
-            agent_state_id = agent_state.id
-        response = client.send_message(
-            agent_id=agent_state_id, role="user", message=f"[{current_time()}]{msg}")
-        result = response.messages
-        for message in result:
-            if message.message_type == 'tool_call_message':
-                function_arguments = message.tool_call.arguments
-                if function_arguments:
-                    arguments_dict = json.loads(function_arguments)
-                    answer = arguments_dict.get("message")
-                    break
-    except:
-        answer = "Letta长期记忆出现兼容性问题暂不可用，可更换其他对话模型"
-    return answer
+def chat_rkllm(msg):  # RKLLM
+    res = rq.get(f"{rkllm_url}/rkllm?msg={msg}")
+    res = res.json()['answer'].strip()
+    return res
 
 
-def clear_chat():  # 清除对话记录
-    global openai_history, spark_history
-    if messagebox.askokcancel(f"清除{mate_name}的记忆和聊天记录",
-                              f"您确定要清除{mate_name}的记忆和聊天记录吗？\n如有需要可先点击🔼导出记录再开启新对话"):
-        output_box.delete("1.0", "end")
-        openai_history, spark_history = [], []
-        with open('data/db/letta.db', 'w', encoding="utf-8") as f:
-            f.write("0")
-        with open('data/db/memory.db', 'w', encoding='utf-8') as f:
-            f.write("")
-        notice("记忆和聊天记录已清空")
-
-
-def clean_chat_web():  # 清除对话记录
-    global openai_history, spark_history
-    openai_history, spark_history = [], []
+def clear_chat():  # 删除记忆
+    global openai_history
+    openai_history = []
+    with open('data/db/memory.db', 'w', encoding='utf-8') as f:
+        f.write("")
+    return "记忆已清空"
