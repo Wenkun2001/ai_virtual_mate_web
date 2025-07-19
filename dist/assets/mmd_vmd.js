@@ -1,7 +1,6 @@
+let camera, scene, renderer, controls, model, helper;
 const mmdPath = 'assets/mmd_model/小月(仅作示例,无法显示)/小月.pmx'; // 人物模型路径
 const vmdPath = 'assets/mmd_action/example.vmd'; // 人物动作路径
-
-let camera, scene, renderer, controls, model, helper;
 init();
 animate();
 function init() {
